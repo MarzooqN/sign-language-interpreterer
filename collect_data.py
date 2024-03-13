@@ -22,14 +22,40 @@ class Data:
         if MS:
             # Update actions based on MSASL_classes.json
             with open('MS-ASL/MSASL_classes.json', 'r') as f:
+                
+                #For testing
+                data_set = json.load(f)
+                
+                #Non-testing
+                '''
                 self.actions = np.array(json.load(f))
+                '''
 
+            selected_words = ['gym', 'my', 'name', 'talk' , 'leave', 'so', 'vegetable', 'next week', 'interpreter', 'weekend', 'go', 'shower', 'week', 'beard' ]
+            
+            filtered_dataset = [word for word in data_set if word in selected_words]
+
+            with open('filtered_dataset.json', 'w') as f:
+                json.dump(filtered_dataset, f)
+
+            with open('filtered_dataset.json', 'r') as f:
+                self.actions = np.array(json.load(f))
+            
             # Update DATA_PATH
             self.DATA_PATH = os.path.join('MSASL_Data')
 
+            #Testing path
+            self.TESTING_PATH = os.path.join('MSASL_Test_Data')
+
+            if(not(os.path.exists('MSASL_Test_Data'))):
+                os.makedirs(self.TESTING_PATH)
+
+            #Actual
+            '''
             if(not(os.path.exists('MSASL_Data'))):
-                for action in self.actions:
-                    os.makedirs(os.path.join(self.DATA_PATH, action))
+                # for action in self.actions:
+                os.makedirs(self.DATA_PATH)
+            '''
 
         else:
             #Path for exported data, numpy arrays
@@ -150,6 +176,9 @@ def collect_data_MS(Data: Data):
             except:
                 continue
 
+
+            os.makedirs(os.path.join(Data.DATA_PATH, str(sample['text'])), exist_ok=True)
+
             folder_path = os.path.join(Data.DATA_PATH, sample['text'])
 
             # Count the number of subdirectories in the specified folder
@@ -198,6 +227,70 @@ def collect_data_MS(Data: Data):
             cv2.destroyAllWindows()
 
 
-            
+def collect_data_MS_test(Data: Data):
+
+    for split in ['train', 'test', 'val']:
+        with open(f'MS-ASL/MSASL_{split}.json', 'r') as f:
+            dataset = json.load(f)
+
+        for sample in dataset:
+            if sample['text'] in Data.actions:
+  
+                video_url = sample['url']
+
+                try:
+                    video = cap_from_youtube(video_url) 
+                except:
+                    continue
+
+
+                os.makedirs(os.path.join(Data.TESTING_PATH, str(sample['text'])), exist_ok=True)
+
+                folder_path = os.path.join(Data.TESTING_PATH, sample['text'])
+
+                # Count the number of subdirectories in the specified folder
+                video_num = sum(1 for _ in os.walk(folder_path)) - 1
+
+                os.makedirs(os.path.join(Data.TESTING_PATH, sample['text'], f"{video_num}" ))
+
+                # Set mediapipe model
+                with mp_holistic.Holistic(min_detection_confidence=.5, min_tracking_confidence=.5) as holistic:
+                    
+                    #Get the total number of frames in the video 
+                    video_frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+                    #Calculate the intervals for which the video will analyze which frame
+                    skip_frames_window = max(int(video_frame_count/Data.sequences_length), 1)
+
+                    #Iterate through the frames
+                    for frame_num in range(Data.sequences_length):
+                        
+                        #Set the urrent frame to the position needed
+                        video.set(cv2.CAP_PROP_POS_FRAMES, frame_num * skip_frames_window)
+                        
+                        #Read the frame from the video
+                        ret, frame = video.read()
+
+                        #Error handling: if the video is corrupt break the loop
+                        if not ret:
+                            break
+
+                        image, results = mediapipe_detection(frame, holistic)
+                        
+
+                        # draw_landmarks(image, results)
+
+
+                        # Extract keypoints and save them into designated folder
+                        keypoints = extract_keypoints(results)
+                        npy_path = os.path.join(Data.TESTING_PATH, str(sample['text']), str(video_num), str(frame_num))
+                        np.save(npy_path, keypoints)
+
+                        # If press q then break
+                        if cv2.waitKey(10) & 0xFF == ord('q'):
+                            break
+
+                video.release()
+                cv2.destroyAllWindows()
 
 
